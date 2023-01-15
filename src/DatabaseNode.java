@@ -1,4 +1,5 @@
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Queue;
@@ -6,23 +7,14 @@ import java.util.Queue;
 public class DatabaseNode {
     private ServerSocket socket;
     private Queue<String> toConnect;
+
+    private ArrayList<Socket> clients;
     private DatabaseRecord record;
     private int port;
 
     public DatabaseNode() {
         toConnect = new LinkedList<>();
-    }
-
-    public void setPort(int port) {
-        this.port = port;
-    }
-
-    public void setRecord(String key, String value) {
-        record = new DatabaseRecord(Integer.parseInt(key),Integer.parseInt(value));
-    }
-
-    public void addToConnect(String address) {
-        toConnect.add(address);
+        clients = new ArrayList<>();
     }
 
     public static void main(String[] args) {
@@ -43,5 +35,21 @@ public class DatabaseNode {
             System.out.println("Wrong input!");
             throw new IllegalArgumentException();
         }
+    }
+
+    public void action(){
+        
+    }
+
+    public void addToConnect(String address) {
+        toConnect.add(address);
+    }
+
+    public void setPort(int port) {
+        this.port = port;
+    }
+
+    public void setRecord(String key, String value) {
+        record = new DatabaseRecord(Integer.parseInt(key),Integer.parseInt(value));
     }
 }

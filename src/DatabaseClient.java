@@ -1,25 +1,78 @@
+/* -----------------------------------------------------------------
+ * Klasa klienta dla projektu "Rozproszona baza danych".
+ * The client class for the "A distributed database" project.
+ *
+ * Kompilacja/Compilation:
+ * javac DatabaseClient.java
+ * Uruchomienie/Execution:
+ * java DatabaseClient -gateway <adress>:<TCP port number> -operation <operation with parameters>
+ *
+ * Klient zakłada, że podane parametry są poprawne oraz, że jest ich odpowiednia
+ * liczba. Nie jest sprawdzana poprawność wywołania.
+ *
+ * The client assumes, that the parameters are correct and there are enough
+ * of them. Their correctness is not checked.
+ *
+ * SKJ, 2022/23, Łukasz Maśko
+ */
+
+import java.net.*;
+import java.io.*;
+
 public class DatabaseClient {
-    private String address;
+    public static void main(String[] args) throws IOException {
+        // parameter storage
+        String gateway = null;
+        int port = 0;
+        String identifier = null;
+        String command = null;
 
-    public static void main(String[] args) {
-        if (args.length > 2) {
-            DatabaseClient databaseClient = new DatabaseClient();
-            if (args[0] == "-gateway")
-                databaseClient.setAddress(args[1]);
-            if (args[2] == "-operation")
-                System.out.println(databaseClient.operate(args[3], args[4]));
-        } else {
-            System.out.println("Wrong input!");
-            throw new IllegalArgumentException();
+        // Parameter scan loop
+        for (int i = 0; i < args.length; i++) {
+            switch (args[i]) {
+                case "-gateway":
+                    String[] gatewayArray = args[++i].split(":");
+                    gateway = gatewayArray[0];
+                    port = Integer.parseInt(gatewayArray[1]);
+                    break;
+                case "-operation":
+                    break;
+                default:
+                    if (command == null) command = args[i];
+                    else if (!"TERMINATE".equals(command)) command += " " + args[i];
+            }
         }
-    }
 
-    public String operate(String operation, String argument) {
-        //ToDo connect to gateway
-        return null;
-    }
+        // communication socket and streams
+        Socket netSocket;
+        PrintWriter out;
+        BufferedReader in;
+        try {
+            System.out.println("Connecting with: " + gateway + " at port " + port);
+            netSocket = new Socket(gateway, port);
+            out = new PrintWriter(netSocket.getOutputStream(), true);
+            in = new BufferedReader(new InputStreamReader(netSocket.getInputStream()));
+            System.out.println("Connected");
 
-    public void setAddress(String address) {
-        this.address = address;
+            System.out.println("Sending: " + command);
+            out.println(command);
+            // Read and print out the response
+            String response;
+            while ((response = in.readLine()) != null) {
+                System.out.println(response);
+            }
+
+            // Terminate - close all the streams and the socket
+            out.close();
+            in.close();
+            netSocket.close();
+        } catch (UnknownHostException e) {
+            System.err.println("Unknown host: " + gateway + ".");
+            System.exit(1);
+        } catch (IOException e) {
+            System.err.println("No connection with " + gateway + ".");
+            System.exit(1);
+        }
+
     }
 }

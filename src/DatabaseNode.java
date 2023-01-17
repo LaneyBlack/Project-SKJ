@@ -8,8 +8,8 @@ import java.util.LinkedList;
 import java.util.Queue;
 
 public class DatabaseNode {
-    private ServerSocket socket;
-    private ArrayList<InetSocketAddress> neighbours;
+    private ServerSocket server;
+    private final ArrayList<InetSocketAddress> neighbours;
     private DatabaseRecord record;
     private int port;
 
@@ -25,7 +25,7 @@ public class DatabaseNode {
                 switch (args[i]) {
                     case "-tcpport" -> databaseNode.setPort(Integer.parseInt(args[i + 1]));
                     case "-record" -> {
-                        String values[] = args[i + 1].trim().split(":");
+                        String[] values = args[i + 1].trim().split(":");
                         databaseNode.setRecord(values[0], values[1]);
                     }
                     case "-connect" -> toConnect.add(args[i + 1].trim());
@@ -40,16 +40,16 @@ public class DatabaseNode {
 
     public void action(Queue<String> toConnect) {
         //First, connect to queued Nodes. Nodes shouldn't be unique, so no need to check for key being unique
-        try {
-            Socket socket = new Socket(InetAddress.getLocalHost(), port);
-            PrintWriter output;
-            BufferedReader input;
-            while (!toConnect.isEmpty()) {
-                String[] address = toConnect.poll().split(":");
+        Socket socket = new Socket();
+        PrintWriter output;
+        BufferedReader input;
+        while (!toConnect.isEmpty()) {
+            String[] address = toConnect.poll().split(":");
+            try {
                 socket.connect(new InetSocketAddress(address[0], Integer.parseInt(address[1])), 500);
                 output = new PrintWriter(socket.getOutputStream(), true);
                 input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                output.println("-newnode");
+                output.println("newnode " + port);
                 String status = input.readLine().trim();
                 System.out.println("Node" + address[0] + ":" + address[1] + " -=- " + status);
                 if (status.equals("welcome")) { //Status "Welcome"
@@ -58,14 +58,13 @@ public class DatabaseNode {
                 input.close();
                 output.close();
                 socket.close();
+            } catch (IOException ex) {
+                System.out.println("Failed to connect to " + address[0] + ":" + address[1]);
             }
-        } catch (IOException e) {
-            System.out.println("Connecting to network exception");
-            throw new RuntimeException(e);
         }
         //Second, listen to new connections
         try {
-            socket = new ServerSocket(port);
+            server = new ServerSocket(port);
         } catch (IOException e) {
             System.out.println("Problem opening server");
             System.exit(-1);
@@ -74,7 +73,7 @@ public class DatabaseNode {
         Socket client = null;
         while (true) {
             try {
-                client = socket.accept();
+                client = server.accept();
             } catch (IOException e) {
                 System.out.println("Accept Exception");
                 System.exit(-1);
@@ -94,7 +93,7 @@ public class DatabaseNode {
         public void run() {
             try {
                 BufferedReader input = new BufferedReader(new InputStreamReader(client.getInputStream()));
-                PrintWriter output = null;
+                PrintWriter clientOutput = new PrintWriter(client.getOutputStream(), true);
                 String[] tmp = input.readLine().trim().split(" ");
                 String operation, argument = null;
                 if (tmp.length == 2) {
@@ -103,65 +102,76 @@ public class DatabaseNode {
                 } else
                     operation = tmp[0];
                 switch (operation) {
-                    case "-set-value" -> {
+                    case "set-value" -> {
+                        String reply = "ERROR";
                         tmp = argument.split(":");
-                        if (Integer.parseInt(tmp[0]) == record.getKey())
+                        if (Integer.parseInt(tmp[0]) == record.getKey()) {
                             record.setValue(Integer.parseInt(tmp[1]));
-                        else
+                            reply = "OK";
+                        } else {
                             for (InetSocketAddress neighbour : neighbours) {
                                 //TODO check if it's not the same node if (threadSocket)
                                 Socket temporary = new Socket();
                                 temporary.connect(neighbour);
-                                output = new PrintWriter(client.getOutputStream(), true);
-                                output.println(operation + argument);
+                                PrintWriter output = new PrintWriter(temporary.getOutputStream(), true);
+                                input = new BufferedReader(new InputStreamReader(temporary.getInputStream()));
+                                output.println(operation + " " + argument);
+                                if (input.readLine().equals("OK")) {
+                                    reply = "OK";
+                                    break;
+                                }
+                                output.close();
+                                temporary.close();
                             }
-                        //ToDo wait for answer
+                        }
+                        clientOutput.println(reply);
                     }
-                    case "-get-value" -> {
-                        if (Integer.parseInt(tmp[0]) == record.getKey())
-                            record.setValue(Integer.parseInt(tmp[1]));
+                    case "get-value" -> {
+                        if (Integer.parseInt(argument) == record.getKey())
+                            clientOutput.println(record);
                         else {
-
+                            //Go to find
                         }
                     }
-                    case "-find-value" -> {
-                        //ToDo
+                    case "find-key" -> {
+                        //ToDo find address:port of the key
                     }
-                    case "-get-max" -> {
-                        //ToDo
+                    case "get-max" -> {
+                        //ToDo get the biggest value
                     }
-                    case "-get-min" -> {
-                        //ToDo
+                    case "get-min" -> {
+                        //ToDo get the smallest value
                     }
-                    case "-new-record" -> {
+                    case "new-record" -> {
                         tmp = argument.split(":");
                         record = new DatabaseRecord(Integer.parseInt(tmp[0]), Integer.parseInt(tmp[1]));
-                        //ToDo tell client OK
+                        clientOutput.println("OK");
                     }
-                    case "-terminate" -> {
+                    case "terminate" -> {
                         System.out.println("Termination");
                         for (InetSocketAddress neighbour : neighbours) {
-                            client.connect(neighbour);
-                            output = new PrintWriter(client.getOutputStream(), true);
-                            output.println("-terminated");
+                            Socket temporary = new Socket();
+                            temporary.connect(neighbour);
+                            PrintWriter output = new PrintWriter(temporary.getOutputStream(), true);
+                            output.println("terminated");
+                            output.close();
+                            temporary.close();
                         }
-                        //ToDo tell client OK
+                        clientOutput.println("OK");
+                        input.close();
+                        clientOutput.close();
+                        client.close();
                         System.exit(0);
                     }
-                    case "-terminated" -> {
-                        neighbours.remove(client);
-                    }
-                    case "-newnode" -> {
-                        //ToDo
-                        neighbours.add(new InetSocketAddress(client.getLocalAddress(), client.getPort()));
-                    }
-                    default -> {
-                        System.out.println("Wrong operation Input!");
-                    }
+                    case "terminated" ->
+                            neighbours.remove(new InetSocketAddress(client.getLocalAddress(), client.getPort()));
+                    case "newnode" ->
+                            neighbours.add(new InetSocketAddress(client.getLocalAddress(), Integer.parseInt(argument)));
+                    default -> System.out.println("Wrong operation Input!");
                 }
                 input.close();
-                output.close();
-                socket.close();
+                clientOutput.close();
+                client.close();
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
